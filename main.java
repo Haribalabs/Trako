@@ -226,3 +226,79 @@ public final class Trako {
         if (args.length < 7) {
             System.err.println("Usage: trako track <collection> <tokenId> <from> <to> <priceWei> <txHash>");
             return 1;
+        }
+        String collection = args[1].toLowerCase(Locale.ROOT);
+        String tokenId = args[2];
+        String from = args[3].toLowerCase(Locale.ROOT);
+        String to = args[4].toLowerCase(Locale.ROOT);
+        BigInteger priceWei;
+        try {
+            priceWei = new BigInteger(args[5]);
+        } catch (NumberFormatException e) {
+            System.err.println("Invalid priceWei: " + args[5]);
+            return 1;
+        }
+        String txHash = args[6];
+
+        TransferRecord r = new TransferRecord(collection, tokenId, from, to, System.currentTimeMillis(), priceWei, txHash);
+        synchronized (transferLock) {
+            recentTransfers.add(r);
+            while (recentTransfers.size() > MAX_RECENT_TRANSFERS) {
+                recentTransfers.remove(0);
+            }
+        }
+        appendTransferToFile(r);
+        System.out.println("Tracked transfer: " + collection + " #" + tokenId + " " + from + " -> " + to + " " + priceWei + " wei");
+        return 0;
+    }
+
+    private int cmdList(String[] args) {
+        int limit = 50;
+        if (args.length > 1) {
+            try {
+                limit = Integer.parseInt(args[1]);
+            } catch (NumberFormatException ignored) {}
+        }
+        synchronized (transferLock) {
+            int size = recentTransfers.size();
+            int from = Math.max(0, size - limit);
+            for (int i = size - 1; i >= from && i >= 0; i--) {
+                TransferRecord r = recentTransfers.get(i);
+                System.out.println(r.toShortString());
+            }
+        }
+        return 0;
+    }
+
+    private int cmdArb(String[] args) {
+        boolean scan = args.length > 1 && "scan".equalsIgnoreCase(args[1]);
+        if (scan) {
+            runArbScan();
+        }
+        synchronized (arbLock) {
+            int limit = 50;
+            if (args.length > 1 && !scan) {
+                try {
+                    limit = Integer.parseInt(args[1]);
+                } catch (NumberFormatException ignored) {}
+            }
+            int size = arbSignals.size();
+            int from = Math.max(0, size - limit);
+            for (int i = size - 1; i >= from && i >= 0; i--) {
+                System.out.println(arbSignals.get(i).toShortString());
+            }
+        }
+        return 0;
+    }
+
+    private void runArbScan() {
+        Map<String, List<TransferRecord>> byCollectionToken = new HashMap<>();
+        synchronized (transferLock) {
+            long cutoff = System.currentTimeMillis() - ARB_WINDOW_MS;
+            for (TransferRecord r : recentTransfers) {
+                if (r.timestampMs < cutoff) continue;
+                if (!trackedCollections.isEmpty() && !trackedCollections.contains(r.collection)) continue;
+                if (r.priceWei == null || r.priceWei.signum() <= 0) continue;
+                String key = r.collection + ":" + r.tokenId;
+                byCollectionToken.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
+            }
