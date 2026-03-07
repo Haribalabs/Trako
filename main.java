@@ -150,3 +150,79 @@ public final class Trako {
             }
         } catch (IOException e) {
             System.err.println("Could not load collections: " + e.getMessage());
+        }
+    }
+
+    private void saveCollections() {
+        Path p = dataPath.resolve(COLLECTIONS_FILE);
+        try {
+            Files.write(p, new ArrayList<>(trackedCollections), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            System.err.println("Could not save collections: " + e.getMessage());
+        }
+    }
+
+    private void loadPersistedTransfers() {
+        Path p = dataPath.resolve(TRANSFERS_FILE);
+        if (!Files.exists(p)) return;
+        try {
+            List<String> lines = Files.readAllLines(p, StandardCharsets.UTF_8);
+            for (String line : lines) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                TransferRecord r = TransferRecord.fromJson(line);
+                if (r != null) {
+                    synchronized (transferLock) {
+                        if (recentTransfers.size() < MAX_RECENT_TRANSFERS) {
+                            recentTransfers.add(r);
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Could not load transfers: " + e.getMessage());
+        }
+    }
+
+    private void appendTransferToFile(TransferRecord r) {
+        Path p = dataPath.resolve(TRANSFERS_FILE);
+        try {
+            Files.write(p, Collections.singletonList(r.toJson()), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            System.err.println("Could not append transfer: " + e.getMessage());
+        }
+    }
+
+    private void loadPersistedArbSignals() {
+        Path p = dataPath.resolve(ARB_SIGNALS_FILE);
+        if (!Files.exists(p)) return;
+        try {
+            List<String> lines = Files.readAllLines(p, StandardCharsets.UTF_8);
+            for (String line : lines) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                ArbSignal s = ArbSignal.fromJson(line);
+                if (s != null) {
+                    synchronized (arbLock) {
+                        arbSignals.add(s);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Could not load arb signals: " + e.getMessage());
+        }
+    }
+
+    private void appendArbSignalToFile(ArbSignal s) {
+        Path p = dataPath.resolve(ARB_SIGNALS_FILE);
+        try {
+            Files.write(p, Collections.singletonList(s.toJson()), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            System.err.println("Could not append arb signal: " + e.getMessage());
+        }
+    }
+
+    private int cmdTrack(String[] args) {
+        if (args.length < 7) {
+            System.err.println("Usage: trako track <collection> <tokenId> <from> <to> <priceWei> <txHash>");
+            return 1;
