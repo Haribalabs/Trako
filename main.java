@@ -74,3 +74,79 @@ public final class Trako {
             case "remove-collection":
                 return cmdRemoveCollection(args);
             case "stats":
+                return cmdStats(args);
+            case "export":
+                return cmdExport(args);
+            case "scan":
+                return cmdScan(args);
+            case "batch-track":
+                return cmdBatchTrack(args);
+            case "collections":
+                return cmdListCollections(args);
+            case "query-address":
+                return cmdQueryByAddress(args);
+            case "query-collection":
+                return cmdQueryByCollection(args);
+            case "query-token":
+                return cmdQueryByToken(args);
+            case "price-stats":
+                return cmdPriceStats(args);
+            case "dedup-arb":
+                return cmdDedupArb(args);
+            case "filter":
+                return cmdFilter(args);
+            case "summary":
+                return cmdSummary(args);
+            case "version":
+                return cmdVersion(args);
+            case "help":
+                printUsage();
+                return 0;
+            default:
+                System.err.println("Unknown command: " + cmd);
+                printUsage();
+                return 1;
+        }
+    }
+
+    private void ensureDataDir() {
+        try {
+            if (!Files.exists(dataPath)) {
+                Files.createDirectories(dataPath);
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to create data directory: " + e.getMessage());
+        }
+    }
+
+    private TrakoConfig loadOrCreateConfig() {
+        Path configPath = Paths.get(CONFIG_FILENAME);
+        if (Files.exists(configPath)) {
+            try {
+                return TrakoConfig.fromFile(configPath);
+            } catch (IOException e) {
+                System.err.println("Config read failed, using defaults: " + e.getMessage());
+            }
+        }
+        TrakoConfig def = new TrakoConfig();
+        try {
+            def.save(configPath);
+        } catch (IOException e) {
+            System.err.println("Could not write default config: " + e.getMessage());
+        }
+        return def;
+    }
+
+    private void loadCollections() {
+        Path p = dataPath.resolve(COLLECTIONS_FILE);
+        if (!Files.exists(p)) return;
+        try {
+            List<String> lines = Files.readAllLines(p, StandardCharsets.UTF_8);
+            for (String line : lines) {
+                String addr = line.trim().toLowerCase(Locale.ROOT);
+                if (addr.startsWith("0x") && addr.length() == 42) {
+                    trackedCollections.add(addr);
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Could not load collections: " + e.getMessage());
