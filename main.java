@@ -378,3 +378,79 @@ public final class Trako {
         String type = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "transfers";
         Path out = dataPath.resolve("export_" + type + "_" + System.currentTimeMillis() + ".jsonl");
         try {
+            if ("transfers".equals(type)) {
+                synchronized (transferLock) {
+                    Files.write(out, recentTransfers.stream().map(TransferRecord::toJson).collect(Collectors.toList()), StandardCharsets.UTF_8);
+                }
+            } else if ("arb".equals(type)) {
+                synchronized (arbLock) {
+                    Files.write(out, arbSignals.stream().map(ArbSignal::toJson).collect(Collectors.toList()), StandardCharsets.UTF_8);
+                }
+            } else {
+                System.err.println("Export type: transfers | arb");
+                return 1;
+            }
+            System.out.println("Exported to " + out);
+        } catch (IOException e) {
+            System.err.println("Export failed: " + e.getMessage());
+            return 1;
+        }
+        return 0;
+    }
+
+    private int cmdScan(String[] args) {
+        runArbScan();
+        System.out.println("Arb scan complete.");
+        return 0;
+    }
+
+    private void printUsage() {
+        System.out.println("Trako — NFT tracker and arbitrage identifier");
+        System.out.println("  track <collection> <tokenId> <from> <to> <priceWei> <txHash>  — record a transfer");
+        System.out.println("  list [limit]         — list recent transfers");
+        System.out.println("  arb [limit]          — list arb signals");
+        System.out.println("  arb scan             — run arb detection on recent transfers");
+        System.out.println("  add-collection <addr>   — track collection");
+        System.out.println("  remove-collection <addr> — untrack collection");
+        System.out.println("  stats                — show counts");
+        System.out.println("  export [transfers|arb] — export to jsonl");
+        System.out.println("  scan                 — run arb scan");
+        System.out.println("  batch-track <file>   — import transfers from jsonl");
+        System.out.println("  collections          — list tracked collections");
+        System.out.println("  query-address <addr> [from|to] [limit] — list transfers for address");
+        System.out.println("  query-collection <addr> [limit] — list transfers for collection");
+        System.out.println("  query-token <coll> <id> [limit] — list transfers for token");
+        System.out.println("  price-stats <coll> [tokenId]   — min/max/avg price");
+        System.out.println("  dedup-arb            — remove duplicate arb signals");
+        System.out.println("  filter [--coll addr] [--from addr] [--to addr] [--limit n] — filter transfers");
+        System.out.println("  summary              — print transfer and arb summary");
+        System.out.println("  help                 — this message");
+    }
+
+    private int cmdFilter(String[] args) {
+        TransferFilter filter = new TransferFilter();
+        for (int i = 1; i < args.length; i++) {
+            if ("--coll".equals(args[i]) && i + 1 < args.length) { filter.collection(args[++i].toLowerCase(Locale.ROOT)); continue; }
+            if ("--from".equals(args[i]) && i + 1 < args.length) { filter.from(args[++i].toLowerCase(Locale.ROOT)); continue; }
+            if ("--to".equals(args[i]) && i + 1 < args.length) { filter.to(args[++i].toLowerCase(Locale.ROOT)); continue; }
+            if ("--limit".equals(args[i]) && i + 1 < args.length) { try { filter.limit(Integer.parseInt(args[++i])); } catch (NumberFormatException ignored) {} continue; }
+        }
+        List<TransferRecord> matched = new ArrayList<>();
+        synchronized (transferLock) {
+            for (int i = recentTransfers.size() - 1; i >= 0 && matched.size() < filter.getLimit(); i--) {
+                TransferRecord r = recentTransfers.get(i);
+                if (filter.matches(r)) matched.add(r);
+            }
+        }
+        for (TransferRecord r : matched) System.out.println(r.toShortString());
+        return 0;
+    }
+
+    private int cmdSummary(String[] args) {
+        List<TransferRecord> copyTransfers;
+        List<ArbSignal> copyArb;
+        synchronized (transferLock) { copyTransfers = new ArrayList<>(recentTransfers); }
+        synchronized (arbLock) { copyArb = new ArrayList<>(arbSignals); }
+        System.out.println(ReportGenerator.summary(copyTransfers));
+        System.out.println(ReportGenerator.arbSummary(copyArb));
+        return 0;
