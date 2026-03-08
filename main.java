@@ -302,3 +302,79 @@ public final class Trako {
                 String key = r.collection + ":" + r.tokenId;
                 byCollectionToken.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
             }
+        }
+        for (Map.Entry<String, List<TransferRecord>> e : byCollectionToken.entrySet()) {
+            List<TransferRecord> list = e.getValue();
+            if (list.size() < 2) continue;
+            list.sort(Comparator.comparingLong(x -> x.timestampMs));
+            for (int i = 0; i < list.size() - 1; i++) {
+                TransferRecord a = list.get(i);
+                TransferRecord b = list.get(i + 1);
+                if (b.timestampMs - a.timestampMs > ARB_WINDOW_MS) continue;
+                BigInteger pa = a.priceWei;
+                BigInteger pb = b.priceWei;
+                BigInteger delta = pa.subtract(pb).abs();
+                int deltaBps = pa.signum() == 0 ? 0 : delta.multiply(BigInteger.valueOf(BPS_DENOM)).divide(pa).intValue();
+                if (deltaBps >= MIN_PRICE_DELTA_BPS) {
+                    ArbSignal sig = new ArbSignal(a.collection, a.tokenId, a.timestampMs, b.timestampMs, pa, pb, deltaBps, a.txHash, b.txHash);
+                    synchronized (arbLock) {
+                        if (!arbSignals.contains(sig)) {
+                            arbSignals.add(sig);
+                            appendArbSignalToFile(sig);
+                        }
+                    }
+                    System.out.println("Arb: " + sig.toShortString());
+                }
+            }
+        }
+    }
+
+    private int cmdAddCollection(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Usage: trako add-collection <address>");
+            return 1;
+        }
+        String addr = args[1].trim().toLowerCase(Locale.ROOT);
+        if (!addr.startsWith("0x") || addr.length() != 42) {
+            System.err.println("Invalid address (need 0x + 40 hex)");
+            return 1;
+        }
+        trackedCollections.add(addr);
+        saveCollections();
+        System.out.println("Added collection: " + addr);
+        return 0;
+    }
+
+    private int cmdRemoveCollection(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Usage: trako remove-collection <address>");
+            return 1;
+        }
+        String addr = args[1].trim().toLowerCase(Locale.ROOT);
+        trackedCollections.remove(addr);
+        saveCollections();
+        System.out.println("Removed collection: " + addr);
+        return 0;
+    }
+
+    private int cmdStats(String[] args) {
+        int transfers;
+        int arbCount;
+        int collections;
+        synchronized (transferLock) {
+            transfers = recentTransfers.size();
+        }
+        synchronized (arbLock) {
+            arbCount = arbSignals.size();
+        }
+        collections = trackedCollections.size();
+        System.out.println("Transfers in memory: " + transfers);
+        System.out.println("Arb signals: " + arbCount);
+        System.out.println("Tracked collections: " + collections);
+        return 0;
+    }
+
+    private int cmdExport(String[] args) {
+        String type = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "transfers";
+        Path out = dataPath.resolve("export_" + type + "_" + System.currentTimeMillis() + ".jsonl");
+        try {
