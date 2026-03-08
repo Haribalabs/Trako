@@ -530,3 +530,79 @@ public final class Trako {
             return collection + " #" + tokenId + " " + from + " -> " + to + " " + (priceWei != null ? priceWei : "0") + " wei " + txHash;
         }
     }
+
+    public static final class ArbSignal {
+        final String collection;
+        final String tokenId;
+        final long blockAms;
+        final long blockBms;
+        final BigInteger priceA;
+        final BigInteger priceB;
+        final int deltaBps;
+        final String txHashA;
+        final String txHashB;
+
+        public ArbSignal(String collection, String tokenId, long blockAms, long blockBms, BigInteger priceA, BigInteger priceB, int deltaBps, String txHashA, String txHashB) {
+            this.collection = collection;
+            this.tokenId = tokenId;
+            this.blockAms = blockAms;
+            this.blockBms = blockBms;
+            this.priceA = priceA;
+            this.priceB = priceB;
+            this.deltaBps = deltaBps;
+            this.txHashA = txHashA;
+            this.txHashB = txHashB;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ArbSignal that = (ArbSignal) o;
+            return Objects.equals(collection, that.collection) && Objects.equals(tokenId, that.tokenId)
+                && Objects.equals(txHashA, that.txHashA) && Objects.equals(txHashB, that.txHashB);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(collection, tokenId, txHashA, txHashB);
+        }
+
+        String toJson() {
+            return String.format("{\"c\":\"%s\",\"t\":\"%s\",\"tsA\":%d,\"tsB\":%d,\"pA\":\"%s\",\"pB\":\"%s\",\"bps\":%d,\"hA\":\"%s\",\"hB\":\"%s\"}",
+                TransferRecord.escape(collection), TransferRecord.escape(tokenId), blockAms, blockBms,
+                priceA != null ? priceA.toString() : "0", priceB != null ? priceB.toString() : "0",
+                deltaBps, TransferRecord.escape(txHashA), TransferRecord.escape(txHashB));
+        }
+
+        static ArbSignal fromJson(String line) {
+            try {
+                String c = TransferRecord.extractQuoted(line, "\"c\":\"");
+                String t = TransferRecord.extractQuoted(line, "\"t\":\"");
+                long tsA = Long.parseLong(TransferRecord.extractBetween(line, "\"tsA\":", ","));
+                long tsB = Long.parseLong(TransferRecord.extractBetween(line, "\"tsB\":", ","));
+                String pA = TransferRecord.extractQuoted(line, "\"pA\":\"");
+                String pB = TransferRecord.extractQuoted(line, "\"pB\":\"");
+                int bps = Integer.parseInt(TransferRecord.extractBetween(line, "\"bps\":", ","));
+                String hA = TransferRecord.extractQuoted(line, "\"hA\":\"");
+                String hB = TransferRecord.extractQuoted(line, "\"hB\":\"");
+                return new ArbSignal(c != null ? c : "", t != null ? t : "", tsA, tsB,
+                    new BigInteger(pA != null ? pA : "0"), new BigInteger(pB != null ? pB : "0"), bps, hA != null ? hA : "", hB != null ? hB : "");
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        String toShortString() {
+            return collection + " #" + tokenId + " priceA=" + priceA + " priceB=" + priceB + " deltaBps=" + deltaBps;
+        }
+    }
+
+    public static final class TrakoConfig {
+        String rpcUrl;
+        String ledgerContractAddress;
+        int rpcTimeoutMs;
+        int arbWindowMs;
+        int minDeltaBps;
+
+        TrakoConfig() {
