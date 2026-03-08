@@ -454,3 +454,79 @@ public final class Trako {
         System.out.println(ReportGenerator.summary(copyTransfers));
         System.out.println(ReportGenerator.arbSummary(copyArb));
         return 0;
+    }
+
+    private int cmdVersion(String[] args) {
+        System.out.println("Trako " + VERSION + " — NFT tracker and arbitrage identifier");
+        System.out.println("Data dir: " + DATA_DIR_NAME + " | Max recent transfers: " + MAX_RECENT_TRANSFERS);
+        System.out.println("Arb window: " + ARB_WINDOW_MS + " ms | Min delta bps: " + MIN_PRICE_DELTA_BPS);
+        return 0;
+    }
+
+    public static final class TransferRecord {
+        final String collection;
+        final String tokenId;
+        final String from;
+        final String to;
+        final long timestampMs;
+        final BigInteger priceWei;
+        final String txHash;
+
+        public TransferRecord(String collection, String tokenId, String from, String to, long timestampMs, BigInteger priceWei, String txHash) {
+            this.collection = collection;
+            this.tokenId = tokenId;
+            this.from = from;
+            this.to = to;
+            this.timestampMs = timestampMs;
+            this.priceWei = priceWei;
+            this.txHash = txHash;
+        }
+
+        String toJson() {
+            return String.format("{\"c\":\"%s\",\"t\":\"%s\",\"f\":\"%s\",\"to\":\"%s\",\"ts\":%d,\"p\":\"%s\",\"h\":\"%s\"}",
+                escape(collection), escape(tokenId), escape(from), escape(to), timestampMs, priceWei != null ? priceWei.toString() : "0", escape(txHash));
+        }
+
+        static TransferRecord fromJson(String line) {
+            try {
+                String c = extractQuoted(line, "\"c\":\"");
+                String t = extractQuoted(line, "\"t\":\"");
+                String f = extractQuoted(line, "\"f\":\"");
+                String to = extractQuoted(line, "\"to\":\"");
+                long ts = Long.parseLong(extractBetween(line, "\"ts\":", ","));
+                String pStr = extractQuoted(line, "\"p\":\"");
+                String h = extractQuoted(line, "\"h\":\"");
+                BigInteger p = new BigInteger(pStr != null ? pStr : "0");
+                return new TransferRecord(c != null ? c : "", t != null ? t : "", f != null ? f : "", to != null ? to : "", ts, p, h != null ? h : "");
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        private static String extractQuoted(String s, String prefix) {
+            int i = s.indexOf(prefix);
+            if (i < 0) return null;
+            i += prefix.length();
+            int j = s.indexOf("\"", i);
+            if (j < 0) return null;
+            return s.substring(i, j);
+        }
+
+        private static String extractBetween(String s, String start, String end) {
+            int i = s.indexOf(start);
+            if (i < 0) return "0";
+            i += start.length();
+            int j = s.indexOf(end, i);
+            if (j < 0) j = s.length();
+            return s.substring(i, j).trim();
+        }
+
+        private static String escape(String x) {
+            if (x == null) return "";
+            return x.replace("\\", "\\\\").replace("\"", "\\\"");
+        }
+
+        String toShortString() {
+            return collection + " #" + tokenId + " " + from + " -> " + to + " " + (priceWei != null ? priceWei : "0") + " wei " + txHash;
+        }
+    }
